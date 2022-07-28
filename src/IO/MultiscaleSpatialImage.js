@@ -1,17 +1,20 @@
+import { mat4, vec3 } from 'gl-matrix'
 import { setMatrixElement } from 'itk-wasm'
+import vtkBoundingBox from 'vtk.js/Sources/Common/DataModel/BoundingBox'
 
 import componentTypeToTypedArray from './componentTypeToTypedArray'
 
 import WebworkerPromise from 'webworker-promise'
 import ImageDataFromChunksWorker from './ImageDataFromChunks.worker'
-import { CXYZT, toDimensionArray } from './dimensionUtils'
+import { chunkArray, CXYZT, ensuredDims } from './dimensionUtils'
+import { getDtype } from './dtypeUtils'
 
 const imageDataFromChunksWorker = new ImageDataFromChunksWorker()
 const imageDataFromChunksWorkerPromise = new WebworkerPromise(
   imageDataFromChunksWorker
 )
 
-const haveSharedArrayBuffer = typeof window.SharedArrayBuffer === 'function'
+// const haveSharedArrayBuffer = typeof window.SharedArrayBuffer === 'function'
 
 /* Every element corresponds to a pyramid scale
      Lower scales, corresponds to a higher index, correspond to a lower
@@ -27,14 +30,82 @@ const haveSharedArrayBuffer = typeof window.SharedArrayBuffer === 'function'
     ranges: Map('1': [0, 140], '2': [3, 130]) // or null if unknown. Range of values for each component
     name: 'dataset_name'
   },
-  {
-    // scale 1 information
-    // [...]
-  },
-    // scale N information
-    // [...]
+  { scale 1 information },
+  { scale N information }
   ]
 */
+
+const ensure3dDirection = d => {
+  if (d.length === 9) {
+    return d
+  }
+  // Pad 2D with Z dimension
+  return [d[0], d[1], 0, d[2], d[3], 0, 0, 0, 1]
+}
+
+const makeMat4 = ({ direction, origin, spacing }) => {
+  const mat = []
+  mat4.fromTranslation(mat, origin)
+
+  mat[0] = direction[0]
+  mat[1] = direction[1]
+  mat[2] = direction[2]
+  mat[4] = direction[3]
+  mat[5] = direction[4]
+  mat[6] = direction[5]
+  mat[8] = direction[6]
+  mat[9] = direction[7]
+  mat[10] = direction[8]
+
+  return mat4.scale(mat, mat, spacing) // index to world here
+}
+
+const makeIndexToWorld = ({ direction: inDirection, origin, spacing }) => {
+  const DIMENSIONS = 3
+  const direction = [...inDirection]
+  for (let idx = 0; idx < DIMENSIONS; ++idx) {
+    for (let col = 0; col < DIMENSIONS; ++col) {
+      // ITK (and VTKMath) uses row-major index axis, but gl-matrix uses column-major. Transpose.
+      direction[col + idx * 3] = direction[idx + col * DIMENSIONS]
+    }
+  }
+
+  if (origin[2] === undefined) origin[2] = 0
+  if (spacing[2] === undefined) spacing[2] = 1
+  return makeMat4({ direction, origin, spacing })
+}
+
+const worldBoundsToIndexBounds = ({ bounds, arrayShape, worldToIndex }) => {
+  if (!bounds || bounds.length === 0) {
+    return new Map(
+      Array.from(arrayShape).map(([dim, size]) => [dim, [0, size]])
+    )
+  }
+
+  const imageBounds = [...vtkBoundingBox.INIT_BOUNDS]
+  vtkBoundingBox
+    .getCorners(bounds, [])
+    .map(corner => vec3.transformMat4(corner, corner, worldToIndex))
+    .forEach(corner => {
+      vtkBoundingBox.addPoint(imageBounds, ...corner)
+    })
+
+  const imageBoundsChunked = chunkArray(2, imageBounds)
+  const spaceBounds = ['x', 'y', 'z'].map((dim, idx) => {
+    const [min, max] = [0, arrayShape.get(dim) ?? 1]
+    const [bmin, bmax] = imageBoundsChunked[idx]
+    return [
+      dim,
+      [
+        Math.floor(Math.min(max, Math.max(min, bmin))),
+        Math.ceil(Math.min(max, Math.max(min, bmax))),
+      ],
+    ]
+  })
+  const ctBounds = ['c', 't'].map(dim => [dim, [0, arrayShape.get(dim) ?? 1]])
+
+  return new Map([...spaceBounds, ...ctBounds])
+}
 
 class MultiscaleSpatialImage {
   scaleInfo = []
@@ -126,26 +197,44 @@ class MultiscaleSpatialImage {
     console.error('Override me in a derived class')
   }
 
-  async buildImage(scale) {
+  async buildImage(scale, bounds) {
     const info = this.scaleInfo[scale]
 
-    const start = new Map(info.dims.map(dim => [dim, 0]))
-    const end = Array.from(start).reduce(
-      (end, [dim, startIndex]) =>
-        end.set(dim, startIndex + info.arrayShape.get(dim)),
-      new Map()
+    const spacing = await this.scaleSpacing(scale)
+    const direction = ensure3dDirection(this.direction)
+    const indexToWorld = makeIndexToWorld({
+      direction,
+      origin: await this.scaleOrigin(scale),
+      spacing,
+    })
+    const indexBounds = worldBoundsToIndexBounds({
+      bounds,
+      arrayShape: info.arrayShape,
+      worldToIndex: mat4.invert([], indexToWorld),
+    })
+
+    const start = new Map(
+      CXYZT.map(dim => [dim, indexBounds.get(dim)?.[0] ?? 0])
+    )
+    const end = new Map(CXYZT.map(dim => [dim, indexBounds.get(dim)?.[1] ?? 1]))
+
+    const arrayShape = new Map(
+      CXYZT.map(dim => [dim, end.get(dim) - start.get(dim)])
     )
 
-    const numChunks = toDimensionArray(CXYZT, info.chunkCount)
+    const startXYZ = ['x', 'y', 'z'].map(dim => start.get(dim))
+    const origin = vec3.transformMat4([], startXYZ, indexToWorld)
+
+    const chunkSize = ensuredDims(1, CXYZT, info.chunkSize)
     const l = 0
-    const zChunkStart = 0
-    const zChunkEnd = numChunks[3]
-    const yChunkStart = 0
-    const yChunkEnd = numChunks[2]
-    const xChunkStart = 0
-    const xChunkEnd = numChunks[1]
+    const zChunkStart = Math.floor(start.get('z') / chunkSize.get('z'))
+    const zChunkEnd = Math.ceil(end.get('z') / chunkSize.get('z'))
+    const yChunkStart = Math.floor(start.get('y') / chunkSize.get('y'))
+    const yChunkEnd = Math.ceil(end.get('y') / chunkSize.get('y'))
+    const xChunkStart = Math.floor(start.get('x') / chunkSize.get('x'))
+    const xChunkEnd = Math.ceil(end.get('x') / chunkSize.get('x'))
     const cChunkStart = 0
-    const cChunkEnd = numChunks[0]
+    const cChunkEnd = info.chunkCount.get('c') ?? 1
 
     const chunkIndices = []
     for (let k = zChunkStart; k < zChunkEnd; k++) {
@@ -160,17 +249,17 @@ class MultiscaleSpatialImage {
 
     const chunks = await this.getChunks(scale, chunkIndices)
 
-    const transferables = chunks.filter(
-      buffer =>
-        // transferables cannot have SharedArrayBuffers
-        !haveSharedArrayBuffer || !(buffer instanceof SharedArrayBuffer)
-    )
+    // const transferables = chunks.filter(
+    //   buffer =>
+    //     // transferables cannot have SharedArrayBuffers
+    //     !haveSharedArrayBuffer || !(buffer instanceof SharedArrayBuffer)
+    // )
 
     const args = {
       scaleInfo: {
         chunkSize: info.chunkSize,
-        arrayShape: info.arrayShape,
-        dtype: this.scaleInfo[scale].pixelArrayMetadata.dtype,
+        arrayShape: arrayShape,
+        dtype: info.pixelArrayMetadata?.dtype ?? getDtype(this.pixelArrayType),
       },
       imageType: this.imageType,
       chunkIndices,
@@ -180,12 +269,9 @@ class MultiscaleSpatialImage {
     }
     const pixelArray = await imageDataFromChunksWorkerPromise.exec(
       'imageDataFromChunks',
-      args,
-      transferables
+      args
+      // transferables
     )
-
-    const origin = await this.scaleOrigin(scale)
-    const spacing = await this.scaleSpacing(scale)
 
     return {
       imageType: this.imageType,
@@ -195,18 +281,19 @@ class MultiscaleSpatialImage {
       direction: this.direction,
       size: ['x', 'y', 'z']
         .slice(0, this.imageType.dimension)
-        .map(dim => info.arrayShape.get(dim)),
+        .map(dim => arrayShape.get(dim)),
       data: pixelArray,
     }
   }
 
-  /* Retrieve the entire image at the given scale. */
-  async scaleLargestImage(scale) {
-    if (this.cachedScaleLargestImage.has(scale)) {
-      return this.cachedScaleLargestImage.get(scale)
+  /* Retrieve bounded image at scale. */
+  async getImage(scale, bounds = []) {
+    const imageKey = `${scale}_${bounds.join()}`
+    if (this.cachedScaleLargestImage.has(imageKey)) {
+      return this.cachedScaleLargestImage.get(imageKey)
     }
-    const image = await this.buildImage(scale)
-    this.cachedScaleLargestImage.set(scale, image)
+    const image = await this.buildImage(scale, bounds)
+    this.cachedScaleLargestImage.set(imageKey, image)
     return image
   }
 }

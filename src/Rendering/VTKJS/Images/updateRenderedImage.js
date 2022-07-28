@@ -1,5 +1,6 @@
 import vtkITKHelper from 'vtk.js/Sources/Common/DataModel/ITKHelper'
 import vtkDataArray from 'vtk.js/Sources/Common/Core/DataArray'
+import vtkBoundingBox from 'vtk.js/Sources/Common/DataModel/BoundingBox'
 
 import updateVisualizedComponents from './updateVisualizedComponents'
 import numericalSort from '../numericalSort'
@@ -31,10 +32,15 @@ async function updateRenderedImage(context) {
 
   const { renderedScale } = actorContext
 
+  let subBounds
+  if (context.main.croppingPlanes && context.main.croppingPlanes.length >= 6) {
+    subBounds = [...vtkBoundingBox.INIT_BOUNDS]
+    context.main.croppingPlanes.forEach(({ origin }) =>
+      vtkBoundingBox.addPoint(subBounds, ...origin)
+    )
+  }
   const [imageAtScale, labelAtScale] = await Promise.all(
-    [image, labelImage]
-      .filter(Boolean)
-      .map(image => image.scaleLargestImage(renderedScale))
+    [image, labelImage].map(image => image?.getImage(renderedScale, subBounds))
   )
   if (labelAtScale) updateContextWithLabelImage(actorContext, labelAtScale)
 
