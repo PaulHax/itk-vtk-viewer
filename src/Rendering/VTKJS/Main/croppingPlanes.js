@@ -16,6 +16,7 @@ export function createCropping(context) {
   context.main.widgetCroppingPlanes = Array.from({ length: 6 }, () =>
     vtkPlane.newInstance()
   )
+  context.main.areCroppingPlanesTouched = false
   context.itkVtkView.addCroppingWidget(croppingWidget)
 
   croppingWidget
@@ -52,14 +53,18 @@ export function createCropping(context) {
   context.main.croppingVirtualImage = vtkImageData.newInstance()
   context.main.croppingBoundingBox = [...vtkBoundingBox.INIT_BOUNDS]
 
-  // Todo: Initialize croppingVirtualImage, croppingBoundingBox, based on the
-  // main.croppingPlanes context, if present.
-  //
-
   const cropState = croppingWidget.getWidgetState().getCroppingPlanes()
   cropState.onModified(() => {
     const prop = context.itkVtkView.getWidgetProp(context.main.croppingWidget)
-    if (prop && prop.getEnabled()) {
+    if (
+      prop &&
+      prop.getEnabled() &&
+      context.main.croppingWidget
+        .getWidgetState()
+        .getStatesWithLabel('handles')
+        .map(h => h.getActive())
+        .some(isActive => isActive)
+    ) {
       const indexes = cropState.getPlanes()
 
       const indexToWorld = context.main.croppingVirtualImage.getIndexToWorld()
@@ -102,6 +107,10 @@ export function createCropping(context) {
           normal: vtkMath.multiplyScalar(Array.from(direction.slice(6, 9)), -1),
         },
       ]
+
+      // Dont reset planes after user input
+      context.main.areCroppingPlanesTouched = true
+
       context.service.send({
         type: 'CROPPING_PLANES_CHANGED',
         data: croppingPlanes,
@@ -147,8 +156,20 @@ export function updateCroppingParameters(context, actor) {
     (orientedBox[5] - orientedBox[4]) / spacing[2],
   ])
 
-  croppingWidget.copyImageDataDescription(croppingVirtualImage)
-  context.service.send('RESET_CROPPING_PLANES')
+  const widgetState = croppingWidget.getWidgetState()
+  widgetState.setIndexToWorldT(...croppingVirtualImage.getIndexToWorld())
+  widgetState.setWorldToIndexT(...croppingVirtualImage.getWorldToIndex())
+
+  if (!context.main.areCroppingPlanesTouched) {
+    // fit new actor if planes not changed by user
+    context.service.send('RESET_CROPPING_PLANES')
+  } else {
+    // update widget transforms
+    context.service.send({
+      type: 'CROPPING_PLANES_CHANGED',
+      data: context.main.croppingPlanes,
+    })
+  }
 }
 
 export function updateCroppingParametersFromImage(context, image) {

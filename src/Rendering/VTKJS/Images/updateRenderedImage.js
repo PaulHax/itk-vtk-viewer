@@ -18,7 +18,18 @@ const updateContextWithLabelImage = (actorContext, scaleLabelImage) => {
   actorContext.renderedLabelImage = scaleLabelImage
 }
 
-async function updateRenderedImage(context) {
+export function computeRenderedBounds(context) {
+  if (!context.main.croppingPlanes || context.main.croppingPlanes.length !== 6)
+    return
+
+  const renderedBounds = [...vtkBoundingBox.INIT_BOUNDS]
+  context.main.croppingPlanes.forEach(({ origin }) =>
+    vtkBoundingBox.addPoint(renderedBounds, ...origin)
+  )
+  return renderedBounds
+}
+
+async function updateRenderedImage(context, event) {
   const name = context.images.updateRenderedName
   const actorContext = context.images.actorContext.get(name)
 
@@ -32,15 +43,15 @@ async function updateRenderedImage(context) {
 
   const { renderedScale } = actorContext
 
-  let subBounds
-  if (context.main.croppingPlanes && context.main.croppingPlanes.length >= 6) {
-    subBounds = [...vtkBoundingBox.INIT_BOUNDS]
-    context.main.croppingPlanes.forEach(({ origin }) =>
-      vtkBoundingBox.addPoint(subBounds, ...origin)
-    )
-  }
+  actorContext.renderedBounds = computeRenderedBounds(context)
+  const boundsToLoad = context.main.areCroppingPlanesTouched
+    ? actorContext.renderedBounds
+    : undefined // if not touched, keep growing bounds to fit whole image
+
   const [imageAtScale, labelAtScale] = await Promise.all(
-    [image, labelImage].map(image => image?.getImage(renderedScale, subBounds))
+    [image, labelImage].map(image =>
+      image?.getImage(renderedScale, boundsToLoad)
+    )
   )
   if (labelAtScale) updateContextWithLabelImage(actorContext, labelAtScale)
 
@@ -98,7 +109,9 @@ async function updateRenderedImage(context) {
     fusedImageScalars.setRange(range, comp)
   )
 
-  context.service.send({ type: 'RENDERED_IMAGE_ASSIGNED', data: name })
+  // if event from changing rendered bounds, don't trigger updateCroppingParametersFromImage
+  if (!event.type.includes('imageBoundsDeboucing'))
+    context.service.send({ type: 'RENDERED_IMAGE_ASSIGNED', data: name })
 }
 
 export default updateRenderedImage

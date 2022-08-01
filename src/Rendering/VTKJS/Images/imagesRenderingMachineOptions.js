@@ -1,7 +1,9 @@
 import createImageRenderer from './createImageRenderer'
 import toggleLayerVisibility from './toggleLayerVisibility'
 import applyComponentVisibility from './applyComponentVisibility'
-import updateRenderedImage from './updateRenderedImage'
+import updateRenderedImage, {
+  computeRenderedBounds,
+} from './updateRenderedImage'
 import updateHistogram from './updateHistogram'
 import selectImageLayer from './selectImageLayer'
 import toggleInterpolation from './toggleInterpolation'
@@ -55,6 +57,34 @@ const imagesRenderingMachineOptions = {
       applyLabelNames,
       applyLabelImageWeights,
       applySelectedLabel,
+      updateIsFramerateScalePickingOn: ({ images }, event) => {
+        images.actorContext.get(
+          images.updateRenderedName
+        ).isFramerateScalePickingOn = event.type !== 'SET_IMAGE_SCALE'
+      },
+    },
+
+    guards: {
+      isFramerateScalePickingOn: ({ images }) =>
+        images.actorContext.get(images.updateRenderedName)
+          .isFramerateScalePickingOn,
+      areBoundsBigger: context => {
+        const {
+          images: { actorContext, updateRenderedName },
+        } = context
+        const { renderedBounds } = actorContext.get(updateRenderedName)
+        if (!renderedBounds) return true
+
+        const currentBounds = computeRenderedBounds(context)
+        return (
+          renderedBounds[0] > currentBounds[0] ||
+          renderedBounds[1] < currentBounds[1] ||
+          renderedBounds[2] > currentBounds[2] ||
+          renderedBounds[3] < currentBounds[3] ||
+          renderedBounds[4] > currentBounds[4] ||
+          renderedBounds[5] < currentBounds[5]
+        )
+      },
     },
   },
 
