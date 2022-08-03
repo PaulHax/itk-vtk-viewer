@@ -6,9 +6,22 @@ import vtkPlane from 'vtk.js/Sources/Common/DataModel/Plane'
 import vtkBoundingBox, {
   getCorners,
 } from 'vtk.js/Sources/Common/DataModel/BoundingBox'
+import vtkITKHelper from 'vtk.js/Sources/Common/DataModel/ITKHelper'
 
 import toggleCroppingPlanes from './toggleCroppingPlanes'
 import HandlesInPixelsImageCroppingWidget from '../Widgets/HandlesInPixelsImageCroppingWidget'
+
+export function getBoundsOfFullImage({ images }) {
+  const imageActorContext = images.actorContext.get(images.updateRenderedName)
+  if (!imageActorContext) return [...vtkBoundingBox.INIT_BOUNDS]
+
+  // todo check if just labelmap
+  const multiScale = imageActorContext.image ?? imageActorContext.labelImage
+
+  const itkImage = multiScale.getItkImageMeta(imageActorContext.renderedScale)
+  const vtkImage = vtkITKHelper.convertItkToVtkImage(itkImage)
+  return vtkImage.getBounds()
+}
 
 export function createCropping(context) {
   const croppingWidget = HandlesInPixelsImageCroppingWidget.newInstance()
@@ -122,13 +135,16 @@ export function createCropping(context) {
   })
 }
 
-export function updateCroppingParameters(context, actor) {
-  const {
-    croppingBoundingBox,
-    croppingVirtualImage,
-    croppingWidget,
-  } = context.main
-  vtkBoundingBox.addBounds(croppingBoundingBox, actor.getBounds())
+export async function updateCroppingParameters(context) {
+  const { croppingVirtualImage, croppingWidget } = context.main
+
+  const croppingBoundingBox = [...vtkBoundingBox.INIT_BOUNDS]
+  context.itkVtkView.getRepresentations().forEach(r => {
+    vtkBoundingBox.addBounds(croppingBoundingBox, ...r.getBounds())
+  })
+
+  const imageBounds = await getBoundsOfFullImage(context)
+  vtkBoundingBox.addBounds(croppingBoundingBox, ...imageBounds)
 
   // Put global bounds in image oriented space
   const imageDirection = croppingVirtualImage.getDirection()

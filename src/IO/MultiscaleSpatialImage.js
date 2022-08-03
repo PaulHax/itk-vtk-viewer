@@ -90,10 +90,10 @@ const worldBoundsToIndexBounds = ({ bounds, arrayShape, worldToIndex }) => {
       vtkBoundingBox.addPoint(imageBounds, ...corner)
     })
 
-  const imageBoundsChunked = chunkArray(2, imageBounds)
+  const imageBoundsByDim = chunkArray(2, imageBounds)
   const spaceBounds = ['x', 'y', 'z'].map((dim, idx) => {
     const [min, max] = [0, arrayShape.get(dim) ?? 1]
-    const [bmin, bmax] = imageBoundsChunked[idx]
+    const [bmin, bmax] = imageBoundsByDim[idx]
     return [
       dim,
       [
@@ -200,11 +200,15 @@ class MultiscaleSpatialImage {
   async buildImage(scale, bounds) {
     const info = this.scaleInfo[scale]
 
-    const spacing = await this.scaleSpacing(scale)
+    // cache for getItkImageMeta
+    if (!info.origin) info.origin = await this.scaleOrigin(scale)
+    if (!info.spacing) info.spacing = await this.scaleSpacing(scale)
+
+    const { spacing, origin: fullImageOrigin } = info
     const direction = ensure3dDirection(this.direction)
     const indexToWorld = makeIndexToWorld({
       direction,
-      origin: await this.scaleOrigin(scale),
+      origin: fullImageOrigin,
       spacing,
     })
     const indexBounds = worldBoundsToIndexBounds({
@@ -295,6 +299,20 @@ class MultiscaleSpatialImage {
     const image = await this.buildImage(scale, bounds)
     this.cachedScaleLargestImage.set(imageKey, image)
     return image
+  }
+
+  // origin and spacing will be undefined if buildImage() not completed on scale first
+  getItkImageMeta(scale) {
+    const { name, origin, spacing, arrayShape } = this.scaleInfo[scale]
+    return {
+      imageType: this.imageType,
+      name,
+      origin,
+      spacing,
+      direction: this.direction,
+      size: this.spatialDims.map(dim => arrayShape.get(dim)),
+      data: [],
+    }
   }
 }
 

@@ -20,6 +20,7 @@ import applyLabelImageBlend from './applyLabelImageBlend'
 import applyLabelNames from './applyLabelNames'
 import applyLabelImageWeights from './applyLabelImageWeights'
 import applySelectedLabel from './applySelectedLabel'
+import { getBoundsOfFullImage } from '../Main/croppingPlanes'
 
 const imagesRenderingMachineOptions = {
   imageRenderingActor: {
@@ -68,21 +69,29 @@ const imagesRenderingMachineOptions = {
       isFramerateScalePickingOn: ({ images }) =>
         images.actorContext.get(images.updateRenderedName)
           .isFramerateScalePickingOn,
+
       areBoundsBigger: context => {
         const {
           images: { actorContext, updateRenderedName },
         } = context
-        const { renderedBounds } = actorContext.get(updateRenderedName)
-        if (!renderedBounds) return true
+        const { loadedBounds } = actorContext.get(updateRenderedName)
 
         const currentBounds = computeRenderedBounds(context)
+        const maxImageBounds = getBoundsOfFullImage(context)
+        currentBounds.forEach((b, i) => {
+          if (i % 2) {
+            currentBounds[i] = Math.min(b, maxImageBounds[i])
+          } else {
+            currentBounds[i] = Math.max(b, maxImageBounds[i])
+          }
+        })
         return (
-          renderedBounds[0] > currentBounds[0] ||
-          renderedBounds[1] < currentBounds[1] ||
-          renderedBounds[2] > currentBounds[2] ||
-          renderedBounds[3] < currentBounds[3] ||
-          renderedBounds[4] > currentBounds[4] ||
-          renderedBounds[5] < currentBounds[5]
+          loadedBounds[0] > currentBounds[0] ||
+          loadedBounds[1] < currentBounds[1] ||
+          loadedBounds[2] > currentBounds[2] ||
+          loadedBounds[3] < currentBounds[3] ||
+          loadedBounds[4] > currentBounds[4] ||
+          loadedBounds[5] < currentBounds[5]
         )
       },
     },

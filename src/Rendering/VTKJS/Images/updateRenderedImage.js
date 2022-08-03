@@ -43,9 +43,8 @@ async function updateRenderedImage(context, event) {
 
   const { renderedScale } = actorContext
 
-  actorContext.renderedBounds = computeRenderedBounds(context)
   const boundsToLoad = context.main.areCroppingPlanesTouched
-    ? actorContext.renderedBounds
+    ? computeRenderedBounds(context)
     : undefined // if not touched, keep growing bounds to fit whole image
 
   const [imageAtScale, labelAtScale] = await Promise.all(
@@ -101,6 +100,8 @@ async function updateRenderedImage(context, event) {
     numberOfComponents,
   })
 
+  actorContext.loadedBounds = actorContext.fusedImage.getBounds()
+
   fusedImage.getPointData().setScalars(fusedImageScalars)
   // Trigger VolumeMapper scalarTexture update
   fusedImage.modified()
@@ -109,9 +110,12 @@ async function updateRenderedImage(context, event) {
     fusedImageScalars.setRange(range, comp)
   )
 
-  // if event from changing rendered bounds, don't trigger updateCroppingParametersFromImage
-  if (!event.type.includes('imageBoundsDeboucing'))
+  // if event from changing rendered bounds, don't trigger updateCroppingParametersFromImage, which then sends CROPPING_PLANES_CHANGED
+  if (!event.type.includes('imageBoundsDeboucing')) {
     context.service.send({ type: 'RENDERED_IMAGE_ASSIGNED', data: name })
+  } else {
+    context.service.send('RENDER')
+  }
 }
 
 export default updateRenderedImage
