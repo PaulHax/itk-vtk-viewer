@@ -162,11 +162,11 @@ function createImagesRenderingMachine(options, context) {
                 to: (c, e) => `imageRenderingActor-${e.data.name}`,
               }),
             },
-            CROPPING_PLANES_CHANGED: {
+            CROPPING_PLANES_CHANGED_BY_USER: {
               // send to all image actors
               actions: actions.pure(({ images: { imageRenderingActors } }) =>
                 Array.from(imageRenderingActors.values()).map(actor =>
-                  send('CROPPING_PLANES_CHANGED', {
+                  send('CROPPING_PLANES_CHANGED_BY_USER', {
                     to: actor,
                   })
                 )

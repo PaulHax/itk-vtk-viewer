@@ -55,7 +55,7 @@ async function updateRenderedImage(context, event) {
   if (labelAtScale) updateContextWithLabelImage(actorContext, labelAtScale)
 
   const isFuseNeeded =
-    Array.isArray(imageAtScale) ||
+    Array.isArray(imageAtScale) || // is conglomerate
     labelAtScale ||
     imageAtScale.imageType.components !==
       actorContext.visualizedComponents.length // more components in image than renderable
@@ -100,6 +100,7 @@ async function updateRenderedImage(context, event) {
     numberOfComponents,
   })
 
+  // for areBoundsBigger guard
   actorContext.loadedBounds = actorContext.fusedImage.getBounds()
 
   fusedImage.getPointData().setScalars(fusedImageScalars)
@@ -113,9 +114,12 @@ async function updateRenderedImage(context, event) {
   // if event from changing rendered bounds, don't trigger updateCroppingParametersFromImage, which then sends CROPPING_PLANES_CHANGED
   if (!event.type.includes('imageBoundsDeboucing')) {
     context.service.send({ type: 'RENDERED_IMAGE_ASSIGNED', data: name })
-  } else {
-    context.service.send('RENDER')
   }
+
+  // force update if image size changed
+  context.itkVtkView.getSliceOutlineFilters().forEach(filter => {
+    filter.modified()
+  })
 }
 
 export default updateRenderedImage

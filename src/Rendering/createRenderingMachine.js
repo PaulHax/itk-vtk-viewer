@@ -95,7 +95,10 @@ const createRenderingMachine = (options, context) => {
               actions: forwardTo('main'),
             },
             CROPPING_PLANES_CHANGED: {
-              actions: [forwardTo('main'), forwardTo('images')],
+              actions: forwardTo('main'),
+            },
+            CROPPING_PLANES_CHANGED_BY_USER: {
+              actions: forwardTo('images'),
             },
             VIEW_MODE_CHANGED: {
               actions: forwardTo('main'),

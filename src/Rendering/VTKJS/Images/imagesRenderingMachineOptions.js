@@ -22,6 +22,8 @@ import applyLabelImageWeights from './applyLabelImageWeights'
 import applySelectedLabel from './applySelectedLabel'
 import { getBoundsOfFullImage } from '../Main/croppingPlanes'
 
+const EPSILON = 0.000001
+
 const imagesRenderingMachineOptions = {
   imageRenderingActor: {
     services: {
@@ -70,29 +72,26 @@ const imagesRenderingMachineOptions = {
         images.actorContext.get(images.updateRenderedName)
           .isFramerateScalePickingOn,
 
-      areBoundsBigger: context => {
+      areBoundsBiggerThanLoaded: context => {
         const {
           images: { actorContext, updateRenderedName },
         } = context
         const { loadedBounds } = actorContext.get(updateRenderedName)
 
-        const currentBounds = computeRenderedBounds(context)
-        const maxImageBounds = getBoundsOfFullImage(context)
-        currentBounds.forEach((b, i) => {
-          if (i % 2) {
-            currentBounds[i] = Math.min(b, maxImageBounds[i])
-          } else {
-            currentBounds[i] = Math.max(b, maxImageBounds[i])
-          }
+        const current = computeRenderedBounds(context)
+        const fullImage = getBoundsOfFullImage(context)
+        current.forEach((b, i) => {
+          current[i] =
+            i % 2
+              ? Math.min(b, fullImage[i]) // high bound case
+              : Math.max(b, fullImage[i]) // low bound case
         })
-        return (
-          loadedBounds[0] > currentBounds[0] ||
-          loadedBounds[1] < currentBounds[1] ||
-          loadedBounds[2] > currentBounds[2] ||
-          loadedBounds[3] < currentBounds[3] ||
-          loadedBounds[4] > currentBounds[4] ||
-          loadedBounds[5] < currentBounds[5]
-        )
+
+        return loadedBounds.some((loaded, i) => {
+          return i % 2
+            ? current[i] - loaded > EPSILON // high bound case: currentBounds[i] > loadedBound
+            : loaded - current[i] > EPSILON // low bound case: currentBounds[i] < loadedBound
+        })
       },
     },
   },

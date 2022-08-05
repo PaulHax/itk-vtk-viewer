@@ -1,4 +1,4 @@
-import MultiscaleSpatialImage from './MultiscaleSpatialImage'
+import MultiscaleSpatialImage, { storeImage } from './MultiscaleSpatialImage'
 import componentTypeToTypedArray from './componentTypeToTypedArray'
 // import WebworkerPromise from 'webworker-promise'
 
@@ -312,6 +312,16 @@ class InMemoryMultiscaleSpatialImage extends MultiscaleSpatialImage {
   constructor(pyramid, scaleInfo, imageType, name = 'Image') {
     super(scaleInfo, imageType, name)
     this.pyramid = pyramid
+
+    // cache whole images for getImage to retrieve
+    pyramid.forEach((data, scale) => {
+      storeImage({
+        cache: this.cachedImages,
+        scale,
+        bounds: this.getIndexBounds(scale),
+        image: data.largestImage,
+      })
+    })
   }
 
   async getChunksImpl(scale, cxyztArray) {
@@ -330,11 +340,6 @@ class InMemoryMultiscaleSpatialImage extends MultiscaleSpatialImage {
         ]
     }
     return result.map(a => a.buffer)
-  }
-
-  async buildImage(scale, bounds) {
-    if (!bounds) return this.pyramid[scale].largestImage // just return assembled image
-    return super.buildImage(scale, bounds)
   }
 }
 

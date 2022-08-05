@@ -163,6 +163,13 @@ const eventResponses = {
   ADJUST_SCALE_FOR_FRAMERATE: {
     target: 'adjustScaleForFramerate',
   },
+  // Use this event to possibly update image bounds to avoid cicular loop with CROPPING_PLANES_CHANGED.
+  // CROPPING_PLANES_CHANGED may be updated automatically with by adjustScaleForFramerate.
+  // ajustSCaleForFramerate->updateRenderedImage->RENDERED_IMAGE_ASSIGNED->updateCroppingParametersFromImage->CROPPING_PLANES_CHANGED
+  // because image size may change across scales.
+  CROPPING_PLANES_CHANGED_BY_USER: {
+    target: 'imageBoundsDeboucing',
+  },
 }
 
 const createImageRenderingActor = (options, context /*, event*/) => {
@@ -185,15 +192,12 @@ const createImageRenderingActor = (options, context /*, event*/) => {
         imageBoundsDeboucing: {
           on: {
             ...eventResponses,
-            CROPPING_PLANES_CHANGED: {
-              target: 'imageBoundsDeboucing',
-            },
           },
           after: {
             500: [
               {
                 target: 'updateRenderedImage',
-                cond: 'areBoundsBigger',
+                cond: 'areBoundsBiggerThanLoaded',
               },
               {
                 target: 'adjustScaleForFramerate',
@@ -290,12 +294,6 @@ const createImageRenderingActor = (options, context /*, event*/) => {
           type: 'parallel',
           on: {
             ...eventResponses,
-            CROPPING_PLANES_CHANGED: {
-              target: 'imageBoundsDeboucing',
-              cond: (context, event, condMeta) =>
-                condMeta.state.history.event.type !==
-                'IMAGE_PIECEWISE_FUNCTION_CHANGED',
-            },
           },
           states: {
             independentComponents: {
