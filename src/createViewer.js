@@ -730,6 +730,7 @@ const createViewer = async (
   }
 
   publicAPI.setUnits = units => {
+    const a = 1
     service.send({ type: 'SET_UNITS', data: units })
   }
 
