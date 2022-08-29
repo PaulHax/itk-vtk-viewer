@@ -474,7 +474,7 @@ const createViewer = async (
   reaction(
     () =>
       !!store.geometriesUI.geometries && store.geometriesUI.geometries.slice(),
-    geometries => {
+    async geometries => {
       if (!geometries || geometries.length === 0) {
         return
       }
@@ -504,7 +504,7 @@ const createViewer = async (
           store.geometriesUI.representationProxies[index].setVisibility(true)
         }
       })
-      updateCroppingParameters(context)
+      await updateCroppingParameters(context)
 
       if (geometries.length < store.geometriesUI.representationProxies.length) {
         const proxiesToDisable = store.geometriesUI.representationProxies.slice(
@@ -540,7 +540,7 @@ const createViewer = async (
 
   reaction(
     () => !!store.pointSetsUI.pointSets && store.pointSetsUI.pointSets.slice(),
-    pointSets => {
+    async pointSets => {
       if (!pointSets || pointSets.length === 0) {
         return
       }
@@ -578,7 +578,7 @@ const createViewer = async (
           store.pointSetsUI.representationProxies[index].setVisibility(true)
         }
       })
-      updateCroppingParameters(context)
+      await updateCroppingParameters(context)
 
       if (pointSets.length < store.pointSetsUI.representationProxies.length) {
         const proxiesToDisable = store.pointSetsUI.representationProxies.slice(

@@ -20,7 +20,7 @@ import applyLabelImageWeights from './applyLabelImageWeights'
 import applySelectedLabel from './applySelectedLabel'
 import {
   computeRenderedBounds,
-  getBoundsOfFullImage,
+  getBoundsOfFullImageSync,
 } from '../Main/croppingPlanes'
 
 const EPSILON = 0.000001
@@ -32,7 +32,7 @@ const areBoundsBiggerThanLoaded = context => {
   const { loadedBounds } = actorContext.get(updateRenderedName)
 
   const current = computeRenderedBounds(context)
-  const fullImage = getBoundsOfFullImage(context)
+  const fullImage = getBoundsOfFullImageSync(context)
   current.forEach((b, i) => {
     current[i] =
       i % 2
@@ -100,10 +100,14 @@ const imagesRenderingMachineOptions = {
           .isFramerateScalePickingOn,
 
       // Check if different scale than loaded or if bounds are larger than loaded
-      isImageUpdateNeeded: context =>
-        context.isUpdateForced ||
-        !isTargetScaleLoaded(context) ||
-        areBoundsBiggerThanLoaded(context),
+      isImageUpdateNeeded: context => {
+        const ret =
+          context.isUpdateForced ||
+          !isTargetScaleLoaded(context) ||
+          areBoundsBiggerThanLoaded(context)
+        console.log('isImageUpdateNeeded', ret)
+        return ret
+      },
     },
   },
 

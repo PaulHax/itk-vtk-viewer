@@ -21,11 +21,21 @@ export function getCropWidgetBounds(context, bounds = []) {
   return bounds
 }
 
-export function getBoundsOfFullImage({ images }) {
+export async function getBoundsOfFullImage({ images }) {
   const imageActorContext = images.actorContext.get(images.updateRenderedName)
   if (!imageActorContext) return [...vtkBoundingBox.INIT_BOUNDS]
 
   const multiScale = imageActorContext.image ?? imageActorContext.labelImage
+  await multiScale.scaleIndexToWorld(imageActorContext.loadedScale)
+  return multiScale.getWorldBounds(imageActorContext.loadedScale)
+}
+
+export function getBoundsOfFullImageSync({ images }) {
+  const imageActorContext = images.actorContext.get(images.updateRenderedName)
+  if (!imageActorContext) return [...vtkBoundingBox.INIT_BOUNDS]
+
+  const multiScale = imageActorContext.image ?? imageActorContext.labelImage
+  console.log(imageActorContext.loadedScale, images.updateRenderedName)
   return multiScale.getWorldBounds(imageActorContext.loadedScale)
 }
 
@@ -167,7 +177,7 @@ export async function updateCroppingParameters(context) {
     .getRepresentations()
     .filter(r => r.getClassName() !== 'vtkVolumeRepresentationProxy') // filter out possibly outdated images which may change in size across scales
     .map(r => r.getBounds())
-    .concat([getBoundsOfFullImage(context)]) // include latest image
+    .concat([await getBoundsOfFullImage(context)]) // include latest image
     .forEach(bounds => {
       vtkBoundingBox.addBounds(croppingBoundingBox, ...bounds)
     })
@@ -214,12 +224,12 @@ export async function updateCroppingParameters(context) {
   }
 }
 
-export function updateCroppingParametersFromImage(context, image) {
+export async function updateCroppingParametersFromImage(context, image) {
   const { croppingVirtualImage } = context.main
   croppingVirtualImage.setSpacing(image.getSpacing())
   croppingVirtualImage.setDirection(image.getDirection())
 
-  updateCroppingParameters(context, image)
+  await updateCroppingParameters(context, image)
 }
 
 export function addCroppingPlanes(context, actor) {

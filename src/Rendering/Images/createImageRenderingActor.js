@@ -26,8 +26,7 @@ const assignLowerScale = assign({
   targetScale: ({ images, targetScale }) => {
     const actorContext = images.actorContext.get(images.updateRenderedName)
     const image = actorContext.image ?? actorContext.labelImage
-    const lowestScale = image.lowestScale
-    if (targetScale < lowestScale) {
+    if (targetScale < image.lowestScale) {
       return targetScale + 1
     }
     return targetScale
@@ -42,6 +41,8 @@ const assignLoadedScale = assign({
   },
 })
 
+const LOW_FPS = 60.0
+
 // Return true if highest scale or right scale (to stop loading of higher scale)
 function highestScaleOrScaleJustRight(context) {
   const { loadedScale } = context.images.actorContext.get(
@@ -50,12 +51,25 @@ function highestScaleOrScaleJustRight(context) {
   return (
     loadedScale === 0 ||
     context.hasErrored ||
-    (context.main.fps > 10.0 && context.main.fps < 33.0)
+    (context.main.fps > LOW_FPS && context.main.fps < 90.0)
   )
 }
 
 function scaleTooHigh(context) {
-  return context.main.fps <= 10.0
+  console.log('scaleTooHigh', context.main.fps)
+
+  return context.main.fps <= LOW_FPS
+}
+
+function scaleTooHighAndMostCoarse(context) {
+  const actorContext = context.images.actorContext.get(
+    context.images.updateRenderedName
+  )
+  const image = actorContext.image ?? actorContext.labelImage
+  const lowestScale = image.lowestScale
+  const { loadedScale } = actorContext
+  console.log(scaleTooHigh(context))
+  return scaleTooHigh(context) && loadedScale === lowestScale
 }
 
 const assignIsFramerateScalePickingOn = assign({
@@ -119,7 +133,7 @@ const eventResponses = {
     actions: 'applyBlendMode',
   },
   UPDATE_IMAGE_HISTOGRAM: {
-    target: 'updateHistogram',
+    target: 'updatingHistogram',
   },
   LABEL_IMAGE_LOOKUP_TABLE_CHANGED: {
     actions: 'applyLookupTable',
@@ -204,6 +218,10 @@ const createUpdatingImageMachine = options => {
           on: {
             FPS_UPDATED: [
               {
+                cond: scaleTooHighAndMostCoarse, // FPS too slow but nothing to do about it
+                target: 'finished',
+              },
+              {
                 cond: scaleTooHigh, // FPS too slow
                 actions: assignLowerScale, // back off
                 target: 'checkingUpdateNeeded',
@@ -283,11 +301,11 @@ const createImageRenderingActor = (options, context /*, event*/) => {
               isUpdateForced: (c, event) =>
                 event.type === 'UPDATE_RENDERED_IMAGE',
             },
-            onDone: { target: 'updateHistogram' },
+            onDone: { target: 'updatingHistogram' },
           },
         },
 
-        updateHistogram: {
+        updatingHistogram: {
           invoke: {
             id: 'updateHistogram',
             src: 'updateHistogram',
