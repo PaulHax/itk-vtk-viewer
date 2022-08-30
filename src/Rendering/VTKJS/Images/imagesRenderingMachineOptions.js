@@ -100,14 +100,10 @@ const imagesRenderingMachineOptions = {
           .isFramerateScalePickingOn,
 
       // Check if different scale than loaded or if bounds are larger than loaded
-      isImageUpdateNeeded: context => {
-        const ret =
-          context.isUpdateForced ||
-          !isTargetScaleLoaded(context) ||
-          areBoundsBiggerThanLoaded(context)
-        console.log('isImageUpdateNeeded', ret)
-        return ret
-      },
+      isImageUpdateNeeded: context =>
+        context.isUpdateForced ||
+        !isTargetScaleLoaded(context) ||
+        areBoundsBiggerThanLoaded(context),
     },
   },
 

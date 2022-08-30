@@ -31,6 +31,7 @@ const assignLowerScale = assign({
     }
     return targetScale
   },
+  hasScaledCoarser: true,
 })
 
 const assignLoadedScale = assign({
@@ -41,7 +42,8 @@ const assignLoadedScale = assign({
   },
 })
 
-const LOW_FPS = 60.0
+const LOW_FPS = 10.0
+const JUST_ACCEPTABLE_FPS = 30.0
 
 // Return true if highest scale or right scale (to stop loading of higher scale)
 function highestScaleOrScaleJustRight(context) {
@@ -50,14 +52,12 @@ function highestScaleOrScaleJustRight(context) {
   )
   return (
     loadedScale === 0 ||
-    context.hasErrored ||
-    (context.main.fps > LOW_FPS && context.main.fps < 90.0)
+    context.hasScaledCoarser ||
+    (LOW_FPS < context.main.fps && context.main.fps < JUST_ACCEPTABLE_FPS)
   )
 }
 
 function scaleTooHigh(context) {
-  console.log('scaleTooHigh', context.main.fps)
-
   return context.main.fps <= LOW_FPS
 }
 
@@ -68,7 +68,6 @@ function scaleTooHighAndMostCoarse(context) {
   const image = actorContext.image ?? actorContext.labelImage
   const lowestScale = image.lowestScale
   const { loadedScale } = actorContext
-  console.log(scaleTooHigh(context))
   return scaleTooHigh(context) && loadedScale === lowestScale
 }
 
@@ -178,7 +177,7 @@ const createUpdatingImageMachine = options => {
             { cond: 'isImageUpdateNeeded', target: 'loadingImage' },
             { target: '#updatingImageMachine.afterUpdatingImage' },
           ],
-          exit: assign({ isUpdateForced: true }),
+          exit: assign({ isUpdateForced: false }),
         },
 
         loadingImage: {
@@ -190,11 +189,10 @@ const createUpdatingImageMachine = options => {
             },
             onError: {
               actions: [
-                (context, event) => {
+                (c, event) => {
                   console.error(`Could not update image : ${event.data}`)
                 },
                 assignLowerScale,
-                assign({ hasErrored: true }),
               ],
               target: 'checkingUpdateNeeded',
             },
@@ -286,7 +284,7 @@ const createImageRenderingActor = (options, context /*, event*/) => {
             src: createUpdatingImageMachine(options, context),
             data: {
               ...context,
-              hasErrored: false,
+              hasScaledCoarser: false,
               targetScale: ({ images }, event) => {
                 if (event.type === 'SET_IMAGE_SCALE') return event.targetScale
                 const actorContext = images.actorContext.get(

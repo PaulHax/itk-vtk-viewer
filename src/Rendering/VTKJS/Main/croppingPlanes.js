@@ -35,7 +35,6 @@ export function getBoundsOfFullImageSync({ images }) {
   if (!imageActorContext) return [...vtkBoundingBox.INIT_BOUNDS]
 
   const multiScale = imageActorContext.image ?? imageActorContext.labelImage
-  console.log(imageActorContext.loadedScale, images.updateRenderedName)
   return multiScale.getWorldBounds(imageActorContext.loadedScale)
 }
 
